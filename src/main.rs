@@ -117,6 +117,7 @@ impl Session {
                 }
             };
             let mut node = Node::new(node_type, &path_string, &node_id, &raw_src);
+
             node.populate_refs();
             node_map.insert(node_id, node);
         }
@@ -135,7 +136,7 @@ impl Session {
             for prev_id in prevs {
                 match node_map.get_mut(&prev_id) {
                     Some(prev_node) => {
-                        prev_node.nexts.push(id.to_string());
+                        prev_node.nexts.insert(id.to_string());
                     }
                     None => {
                         invalid_node_ids.insert(prev_id.clone());
@@ -169,16 +170,20 @@ impl Session {
         let mut execution_errors = Vec::new();
         for s_id in sorted_valid_ids {
             let node = &node_map[&s_id];
+
+            let start_time = std::time::Instant::now();
+            let status: String;
             match node.execute(&self.db_conn) {
                 Ok(_) => {
                     n_execution_success += 1;
-                    println!("Model {}: OK", s_id);
+                    status = "OK".to_string();
                 }
                 Err(e) => {
-                    println!("Model {}: ERROR", s_id);
+                    status = "ERROR".to_string();
                     execution_errors.push(e);
                 }
             };
+            println!("Model {}: {} in {:?}", s_id, status, start_time.elapsed());
         }
 
         for err in &execution_errors {
@@ -212,8 +217,8 @@ struct Node {
     id: String,
     raw_src: String,
     rendered_src: String,
-    nexts: Vec<String>,
-    prevs: Vec<String>,
+    nexts: HashSet<String>,
+    prevs: HashSet<String>,
     node_type: NodeType,
 }
 
@@ -242,7 +247,7 @@ impl Node {
     fn populate_refs(&mut self) {
         let re = regex::Regex::new(r"\{\{([^}]*)\}\}").unwrap();
         for cap in re.captures_iter(&self.raw_src) {
-            self.prevs.push(cap[1].to_string());
+            self.prevs.insert(cap[1].trim().to_string());
         }
 
         let rendered = re.replace_all(&self.raw_src, "$1");
@@ -287,22 +292,22 @@ impl Node {
         // We are not going to bulk-execute statements, so the source code is split
         // by semicolon. A single statement containing SELECT, WITH, etc., will
         // be treated differently to create VIEW or TABLE.
-        for statement in statements {
+        for statement in &statements {
+            let mut adjusted_statement = statement.to_string();
+
             // Only process non-empty statements
             // We shall process SQL statement that returns record
-            if self.will_produce_records(&statement) {
+            if self.will_produce_records(&adjusted_statement) {
                 // TODO
+                adjusted_statement =
+                    format!("CREATE OR REPLACE TABLE {} AS ({})", self.id, statement);
             }
 
-            let res = conn.execute(&statement, []);
+            let res = conn.execute(&adjusted_statement, []);
             match res {
                 Ok(_) => {
-                    //TODO
-                    // println!(
-                    //     "EXECUTED: {}...\nAFFECTED: {}\n\n",
-                    //     &statement[0..50.min(statement.len())],
-                    //     n_affected
-                    // );
+                    // TODO do something on success
+                    // println!("Crated model {} in {:?}", self.id, start_time.elapsed());
                 }
                 Err(e) => {
                     let err_msg = e.to_string();

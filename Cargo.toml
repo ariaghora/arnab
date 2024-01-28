@@ -13,3 +13,8 @@ regex = "1.10.3"
 serde = {version="1.0.195", features=["derive"]}
 serde_yaml = "0.9.30"
 tera = "1.19.1"
+
+[profile.release]
+opt-level = 'z'
+lto = true
+strip = true
