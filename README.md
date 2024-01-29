@@ -8,9 +8,14 @@
 Aria's cheap man's experimental data transformation tool, built on top of DuckDB 🦆
 </h4>
 
+Arnab aims to offer a simple, cross-platform solution for organizing and executing data models, focusing on core functionalities essential for modern data workflows.
+Just like (DBT)[https://docs.getdbt.com/], but with subset of its features and more portable.
+
 ## Features
 
 - [x] Single executable file
+- [x] Cross-platform
+- [x] Automatically determine the order of model execution
 - [x] Model materialization types:
     - [x] Table
     - [x] View
