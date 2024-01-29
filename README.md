@@ -8,3 +8,11 @@
 Aria's cheap man's experimental data transformation tool, built on top of DuckDB 🦆
 </h4>
 
+## Features
+
+- [x] Single executable file
+- [x] Model materialization types:
+    - [x] Table
+    - [x] View
+    - [ ] Incremental
+- [ ] Macro
