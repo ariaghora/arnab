@@ -2,10 +2,12 @@ mod session;
 
 #[allow(unused_imports)]
 use clap::{Command, Parser, Subcommand};
+use colored::Colorize;
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
     io::Write,
+    usize,
 };
 
 use duckdb::Connection;
@@ -84,6 +86,32 @@ enum NodeType {
 struct Session {
     config: Config,
     db_conn: Connection,
+}
+
+fn format_elapsed(elapsed: std::time::Duration) -> String {
+    let hours = elapsed.as_secs() / 3600;
+    let minutes = (elapsed.as_secs() % 3600) / 60;
+    let seconds = elapsed.as_secs() % 60;
+    let milliseconds = elapsed.subsec_millis();
+
+    let mut components = Vec::new();
+
+    if hours > 0 {
+        components.push(format!("{}h", hours));
+    }
+    if minutes > 0 {
+        components.push(format!("{}m", minutes));
+    }
+    if seconds > 0 {
+        components.push(format!("{}s", seconds));
+    }
+
+    // always show milliseconds
+    components.push(format!("{}ms", milliseconds));
+
+    let formatted_duration = components.join(" ");
+
+    formatted_duration
 }
 
 impl Session {
@@ -195,31 +223,47 @@ impl Session {
             let node = &node_map[s_id];
 
             let start_time = std::time::Instant::now();
-            let status: String;
+            let mut status: String;
 
-            print!(
-                "{}/{}: creating {} model {}... ",
+            let mut process_info = format!(
+                "{} of {}: creating {} {} model",
                 nth_processed,
                 sorted_valid_ids.len(),
+                node.id.blue(),
                 node.materialize
                     .as_ref()
                     .unwrap_or(&"view".to_string())
                     .to_lowercase(),
-                node.id
             );
+            // pad with dots to fill terminal width nicely in `n_col` columns
+            let n_col = 70;
+            if process_info.len() < n_col {
+                process_info.extend(std::iter::repeat('.').take(n_col - process_info.len()));
+            }
+
+            print!("{}", process_info);
             std::io::stdout().flush().unwrap();
 
             match node.execute(&self.db_conn) {
-                Ok(_) => {
+                Ok(execution_result) => {
                     n_execution_success += 1;
-                    status = "OK".to_string();
+                    status = "CREATE VIEW".green().to_string();
+                    match execution_result {
+                        NodeExecutionResult::Sql { n_rows } => {
+                            if let Some(materialize) = &node.materialize {
+                                if materialize == "table" {
+                                    status = format!("SELECT {}", n_rows).green().to_string();
+                                }
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
-                    status = "ERROR".to_string();
+                    status = "ERROR".red().to_string();
                     execution_errors.push(e);
                 }
             };
-            println!("[{} in {:?}]", status, start_time.elapsed());
+            println!("[{} in {}]", status, format_elapsed(start_time.elapsed()));
 
             nth_processed += 1;
         }
@@ -229,8 +273,8 @@ impl Session {
         }
 
         println!(
-            "\nPipeline execution completed in {:?} with {} success and {} errors",
-            pipeline_start_time.elapsed(),
+            "\nPipeline execution completed in {} with {} success and {} errors",
+            format_elapsed(pipeline_start_time.elapsed()),
             n_execution_success,
             execution_errors.len()
         );
@@ -263,6 +307,10 @@ struct Node {
     materialize: Option<String>,
 }
 
+enum NodeExecutionResult {
+    Sql { n_rows: usize },
+}
+
 impl Node {
     pub fn new(node_type: NodeType, path: &str, id: &str, raw_src: &str) -> Self {
         Self {
@@ -277,13 +325,13 @@ impl Node {
         }
     }
 
-    pub fn execute(&self, conn: &Connection) -> Result<(), ArnabError> {
-        match &self.node_type {
+    pub fn execute(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
+        let res = match &self.node_type {
             NodeType::Sql => self.execute_sql(conn)?,
             // NodeType::Shell => todo!(),
             // NodeType::Unknown => todo!(),
-        }
-        Ok(())
+        };
+        Ok(res)
     }
 
     fn render_and_populate_refs(&mut self) {
@@ -320,7 +368,7 @@ impl Node {
         false
     }
 
-    fn execute_sql(&self, conn: &Connection) -> Result<(), ArnabError> {
+    fn execute_sql(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
         let statements: Vec<String> = self
             .rendered_src
             .split(";")
@@ -344,6 +392,7 @@ impl Node {
         // We are not going to bulk-execute statements, so the source code is split
         // by semicolon. A single statement containing SELECT, WITH, etc., will
         // be treated differently to create VIEW or TABLE.
+        let mut n_rows: usize = 0;
         for statement in &statements {
             let mut adjusted_statement = statement.to_string();
 
@@ -372,8 +421,17 @@ impl Node {
             let res = conn.execute(&adjusted_statement, []);
             match res {
                 Ok(_) => {
-                    // TODO do something on success
-                    // println!("Crated model {} in {:?}", self.id, start_time.elapsed());
+                    if self.materialize == Some("table".into()) {
+                        // Count the number of rows
+                        let count_sql = format!("SELECT COUNT(*) FROM {}", self.id);
+                        if let Ok(stmt) = &mut conn.prepare(&count_sql) {
+                            let mut rows = stmt.query([]).unwrap();
+                            rows.next().into_iter().for_each(|r| {
+                                let n: usize = r.unwrap().get(0).unwrap();
+                                n_rows = n;
+                            });
+                        }
+                    }
                 }
                 Err(e) => {
                     let err_msg = e.to_string();
@@ -390,7 +448,7 @@ impl Node {
                 }
             };
         }
-        Ok(())
+        Ok(NodeExecutionResult::Sql { n_rows })
     }
 }
 
