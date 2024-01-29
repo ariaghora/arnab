@@ -2,10 +2,10 @@ mod session;
 
 #[allow(unused_imports)]
 use clap::{Command, Parser, Subcommand};
-use glob;
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
+    io::Write,
 };
 
 use duckdb::Connection;
@@ -22,13 +22,15 @@ struct Cli {
 enum Commands {
     /// Run sql script file
     RunFile(RunScriptArgs),
+    /// Run pipelines
     Run(RunArgs),
 }
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct RunScriptArgs {
-    script_path: String,
+    /// Paths to script or pattern
+    script_paths: Vec<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -41,6 +43,12 @@ struct RunArgs {
 struct Config {
     db_path: Option<String>,
     model_path: Option<String>,
+    models: Option<HashMap<String, ModelInfo>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelInfo {
+    materialize: Option<String>,
 }
 
 #[derive(Debug)]
@@ -116,9 +124,17 @@ impl Session {
                     _ => return Err(ArnabError::UnknownModelType(extension.into())),
                 }
             };
+
             let mut node = Node::new(node_type, &path_string, &node_id, &raw_src);
 
-            node.populate_refs();
+            // set model's materialization mode
+            if let Some(models) = &self.config.models {
+                if let Some(model_info) = models.get(&node_id) {
+                    node.materialize = model_info.materialize.clone();
+                }
+            }
+
+            node.render_and_populate_refs();
             node_map.insert(node_id, node);
         }
         println!(
@@ -149,30 +165,50 @@ impl Session {
             }
         }
 
+        // Terminal ids are the id of nodes who have no outgoing edge,
+        // i.e., node.nexts.len() == 0
         let terminal_ids: Vec<String> = node_map
             .values()
             .filter(|v| v.nexts.len() == 0)
             .map(|v| v.id.clone())
             .collect();
 
+        // Obtain node ids in topological order
         let mut sorted_ids = vec![];
-        for t_id in terminal_ids {
-            self.topo(&node_map[&t_id], &mut sorted_ids);
+        for t_id in &terminal_ids {
+            self.topo(t_id, &node_map, &mut sorted_ids);
         }
 
+        // Filter out invalid node ids
         let sorted_valid_ids = sorted_ids
             .iter()
             .filter(|v| !invalid_node_ids.contains(&v.to_string()))
             .map(|v| v.to_string())
             .collect::<Vec<String>>();
 
+        // Main pipeline execution
         let mut n_execution_success = 0;
         let mut execution_errors = Vec::new();
-        for s_id in sorted_valid_ids {
-            let node = &node_map[&s_id];
+        let mut nth_processed = 1;
+        let pipeline_start_time = std::time::Instant::now();
+        for s_id in &sorted_valid_ids {
+            let node = &node_map[s_id];
 
             let start_time = std::time::Instant::now();
             let status: String;
+
+            print!(
+                "{}/{}: creating {} model {}... ",
+                nth_processed,
+                sorted_valid_ids.len(),
+                node.materialize
+                    .as_ref()
+                    .unwrap_or(&"view".to_string())
+                    .to_lowercase(),
+                node.id
+            );
+            std::io::stdout().flush().unwrap();
+
             match node.execute(&self.db_conn) {
                 Ok(_) => {
                     n_execution_success += 1;
@@ -183,7 +219,9 @@ impl Session {
                     execution_errors.push(e);
                 }
             };
-            println!("Model {}: {} in {:?}", s_id, status, start_time.elapsed());
+            println!("[{} in {:?}]", status, start_time.elapsed());
+
+            nth_processed += 1;
         }
 
         for err in &execution_errors {
@@ -191,7 +229,8 @@ impl Session {
         }
 
         println!(
-            "OK={}, ERROR={}",
+            "\nPipeline execution completed in {:?} with {} success and {} errors",
+            pipeline_start_time.elapsed(),
             n_execution_success,
             execution_errors.len()
         );
@@ -199,15 +238,16 @@ impl Session {
         Ok(())
     }
 
-    fn topo(&self, root: &Node, out: &mut Vec<String>) {
-        if out.contains(&root.id) {
+    fn topo(&self, root_id: &String, nodes: &HashMap<String, Node>, out: &mut Vec<String>) {
+        if out.contains(&root_id) {
             return;
         }
 
-        for prev_id in &root.prevs {
-            out.push(prev_id.clone())
+        let root_node = &nodes[root_id];
+        for prev_id in &root_node.prevs {
+            self.topo(prev_id, nodes, out);
         }
-        out.push(root.id.clone())
+        out.push(root_id.clone())
     }
 }
 
@@ -220,6 +260,7 @@ struct Node {
     nexts: HashSet<String>,
     prevs: HashSet<String>,
     node_type: NodeType,
+    materialize: Option<String>,
 }
 
 impl Node {
@@ -231,6 +272,7 @@ impl Node {
             rendered_src: Default::default(),
             nexts: Default::default(),
             prevs: Default::default(),
+            materialize: None,
             node_type,
         }
     }
@@ -244,13 +286,22 @@ impl Node {
         Ok(())
     }
 
-    fn populate_refs(&mut self) {
+    fn render_and_populate_refs(&mut self) {
+        // strip comments
+        let raw_no_comment = self
+            .raw_src
+            .split("\n")
+            .filter(|line| !line.trim().starts_with("--"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
         let re = regex::Regex::new(r"\{\{([^}]*)\}\}").unwrap();
-        for cap in re.captures_iter(&self.raw_src) {
+        for cap in re.captures_iter(&raw_no_comment) {
             self.prevs.insert(cap[1].trim().to_string());
         }
 
-        let rendered = re.replace_all(&self.raw_src, "$1");
+        let rendered = re.replace_all(&raw_no_comment, "$1");
+
         self.rendered_src = rendered.to_string();
     }
 }
@@ -283,6 +334,7 @@ impl Node {
             .iter()
             .filter(|s| self.will_produce_records(s))
             .collect::<Vec<_>>();
+
         if statements_returning_records.len() != 1 {
             return Err(
                 ArnabError::Error(format!("Models must have exactly one `SELECT` statement (or equivalent statements returning recods), but {} has {}", self.id, statements_returning_records.len())),
@@ -298,9 +350,23 @@ impl Node {
             // Only process non-empty statements
             // We shall process SQL statement that returns record
             if self.will_produce_records(&adjusted_statement) {
-                // TODO
-                adjusted_statement =
-                    format!("CREATE OR REPLACE TABLE {} AS ({})", self.id, statement);
+                let create_view_statement =
+                    format!("CREATE OR REPLACE VIEW {} AS ({})", self.id, statement);
+                adjusted_statement = match &self.materialize {
+                    Some(materialize) => match materialize.to_lowercase().as_str() {
+                        "table" => {
+                            format!("CREATE OR REPLACE TABLE {} AS ({})", self.id, statement)
+                        }
+                        "view" => create_view_statement,
+                        _ => {
+                            return Err(ArnabError::Error(format!(
+                                "Unknown materialization type `{}`",
+                                materialize
+                            )))
+                        }
+                    },
+                    None => create_view_statement,
+                };
             }
 
             let res = conn.execute(&adjusted_statement, []);
@@ -332,7 +398,7 @@ fn run_session_with_args(_args: RunArgs, conn: Connection, config: Config) {
     let mut session = Session::new(config, conn);
     match session.run() {
         Ok(_) => {
-            println!("Finished")
+            // TODO: do something on session completed
         }
         Err(e) => {
             match e {
@@ -373,21 +439,28 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let cli = Cli::parse();
     match cli.command {
-        Commands::RunFile(arg) => match std::fs::read_to_string(&arg.script_path) {
-            Ok(content) => {
-                let script_exec_result = conn.execute_batch(&content);
-                match script_exec_result {
-                    Ok(_) => {
-                        println!("Finished executing {}", arg.script_path);
+        Commands::RunFile(arg) => {
+            //let g = glob(&arg.script_paths).unwrap();
+            for path in &arg.script_paths {
+                match std::fs::read_to_string(path) {
+                    Ok(content) => {
+                        print!("Running {}... ", path);
+                        std::io::stdout().flush().unwrap();
+
+                        let script_exec_result = conn.execute_batch(&content);
+                        match script_exec_result {
+                            Ok(_) => {
+                                println!("OK");
+                            }
+                            Err(e) => {
+                                println!("ERROR: {}\nSkipping {}", e.to_string(), path);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        println!("{}", e.to_string());
-                        std::process::exit(1);
-                    }
-                }
+                    Err(_) => println!("Cannot open {}, skipping", path),
+                };
             }
-            Err(_) => todo!(),
-        },
+        }
         Commands::Run(args) => {
             run_session_with_args(args, conn, config);
         }
