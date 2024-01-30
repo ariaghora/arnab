@@ -46,6 +46,7 @@ struct RunArgs {
 #[derive(Debug, Deserialize)]
 struct Config {
     db_path: Option<String>,
+    macro_path: Option<String>,
     duckdb_settings: Option<HashMap<String, String>>,
     model_path: Option<String>,
     models: Option<HashMap<String, ModelInfo>>,
@@ -133,6 +134,24 @@ impl Session {
             .map(|v| v.unwrap())
             .collect::<Vec<_>>();
 
+        // load User-defined macros
+        let mut macros = HashMap::new();
+        if let Some(macro_path) = &self.config.macro_path {
+            let macro_paths = glob::glob(
+                std::path::Path::new(macro_path)
+                    .join("*.*")
+                    .to_str()
+                    .unwrap(),
+            )
+            .unwrap();
+            for path_opt in macro_paths {
+                let path = path_opt.unwrap();
+                let path_str = path.to_string_lossy().to_string();
+                let macro_src = std::fs::read_to_string(&path_str).unwrap();
+                macros.insert(path_str, macro_src);
+            }
+        }
+
         let mut node_map = HashMap::new();
         let mut n_source = 0;
         for p in model_paths.into_iter() {
@@ -165,13 +184,17 @@ impl Session {
                 }
             }
 
-            node.render_and_populate_refs();
+            node.render_and_populate_refs(&macros);
+
             node_map.insert(node_id, node);
         }
+
         println!(
-            "Found {} model source{}\n",
+            "Found {} model source{}, {} macro{}\n",
             n_source,
-            if n_source > 1 { "s" } else { "" }
+            if n_source > 1 { "s" } else { "" },
+            macros.len(),
+            if macros.len() > 1 { "s" } else { "" },
         );
 
         // Populate outgoing nodes
@@ -353,7 +376,7 @@ impl Node {
         Ok(res)
     }
 
-    fn render_and_populate_refs(&mut self) {
+    fn render_and_populate_refs(&mut self, macros: &HashMap<String, String>) {
         // strip one-line comments
         let mut raw_no_comment = self
             .raw_src
@@ -368,14 +391,26 @@ impl Node {
 
         let deps: Arc<RwLock<HashSet<String>>> = Default::default();
         let deps_clone = deps.clone();
+
         let mut env = minijinja::Environment::new();
+
+        let mut macro_src_concat = macros
+            .values()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        macro_src_concat.push_str("\n");
+        macro_src_concat.push_str(&raw_no_comment);
+
         let the_fn = move |name: String| {
             let foo = &deps_clone;
             foo.write().unwrap().insert(name.clone());
             Ok(name)
         };
-        env.add_template(&self.id, &raw_no_comment).unwrap();
+        env.add_template(&self.id, &macro_src_concat).unwrap();
         env.add_function("ref", the_fn);
+
         let rendered = env
             .get_template(&self.id)
             .unwrap()
@@ -528,6 +563,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    // Override DuckDb's settings if specified in the configuration
     if let Some(duckdb_settings) = &config.duckdb_settings {
         for (k, v) in duckdb_settings.iter() {
             let mut stmt = match conn.prepare(&format!("SET {} = {:?};", k, v)) {
