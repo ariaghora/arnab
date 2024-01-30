@@ -46,6 +46,7 @@ struct RunArgs {
 #[derive(Debug, Deserialize)]
 struct Config {
     db_path: Option<String>,
+    duckdb_settings: Option<HashMap<String, String>>,
     model_path: Option<String>,
     models: Option<HashMap<String, ModelInfo>>,
 }
@@ -526,6 +527,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             std::process::exit(1);
         }
     };
+
+    if let Some(duckdb_settings) = &config.duckdb_settings {
+        for (k, v) in duckdb_settings.iter() {
+            match conn.execute(&format!("SET {} = {};", k, v), []) {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("FATAL ERROR: {}\nExiting", e.to_string());
+                    std::process::exit(1);
+                }
+            };
+        }
+
+        println!("Overridden duckdb settings:\n{:?}", duckdb_settings);
+    }
 
     let cli = Cli::parse();
     match cli.command {
