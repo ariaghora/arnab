@@ -166,7 +166,7 @@ impl Session {
             node_map.insert(node_id, node);
         }
         println!(
-            "Found {} model source{}",
+            "Found {} model source{}\n",
             n_source,
             if n_source > 1 { "s" } else { "" }
         );
@@ -214,6 +214,9 @@ impl Session {
             .map(|v| v.to_string())
             .collect::<Vec<String>>();
 
+        let now = chrono::Local::now();
+        println!("Start pipeline execution on {}", now.format("%Y-%m-%d"));
+
         // Main pipeline execution
         let mut n_execution_success = 0;
         let mut execution_errors = Vec::new();
@@ -225,8 +228,11 @@ impl Session {
             let start_time = std::time::Instant::now();
             let mut status: String;
 
+            let now_node = chrono::Local::now();
+
             let mut process_info = format!(
-                "{} of {}: creating {} {} model",
+                "{}  {} of {}: creating {} {} model",
+                now_node.format("%H:%M:%S"),
                 nth_processed,
                 sorted_valid_ids.len(),
                 node.id.blue(),
@@ -236,7 +242,7 @@ impl Session {
                     .to_lowercase(),
             );
             // pad with dots to fill terminal width nicely in `n_col` columns
-            let n_col = 70;
+            let n_col = 80;
             if process_info.len() < n_col {
                 process_info.extend(std::iter::repeat('.').take(n_col - process_info.len()));
             }
