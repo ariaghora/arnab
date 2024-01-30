@@ -530,7 +530,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if let Some(duckdb_settings) = &config.duckdb_settings {
         for (k, v) in duckdb_settings.iter() {
-            match conn.execute(&format!("SET {} = {};", k, v), []) {
+            let mut stmt = match conn.prepare(&format!("SET {} = {:?};", k, v)) {
+                Ok(stmt) => stmt,
+                Err(e) => {
+                    println!("FATAL ERROR: {}\nExiting", e.to_string());
+                    std::process::exit(1);
+                }
+            };
+
+            match stmt.execute([]) {
                 Ok(_) => {}
                 Err(e) => {
                     println!("FATAL ERROR: {}\nExiting", e.to_string());
