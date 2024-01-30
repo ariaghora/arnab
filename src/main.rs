@@ -3,10 +3,12 @@ mod session;
 #[allow(unused_imports)]
 use clap::{Command, Parser, Subcommand};
 use colored::Colorize;
+use regex::Regex;
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
     io::Write,
+    sync::{Arc, RwLock},
     usize,
 };
 
@@ -274,8 +276,18 @@ impl Session {
             nth_processed += 1;
         }
 
-        for err in &execution_errors {
-            println!("{}", err.to_string())
+        if execution_errors.len() > 0 {
+            println!("\nErrors:");
+            for err in &execution_errors {
+                match err {
+                    ArnabError::StatementExecutionError { msg, sql: _, path } => {
+                        println!("Failed to execute SQL statement.");
+                        println!("Source path : {}", path);
+                        println!("Error       : {}\n", msg.red());
+                    }
+                    _ => println!("{}\n", err.to_string()),
+                }
+            }
         }
 
         println!(
@@ -341,20 +353,34 @@ impl Node {
     }
 
     fn render_and_populate_refs(&mut self) {
-        // strip comments
-        let raw_no_comment = self
+        // strip one-line comments
+        let mut raw_no_comment = self
             .raw_src
             .split("\n")
             .filter(|line| !line.trim().starts_with("--"))
             .collect::<Vec<_>>()
             .join("\n");
 
-        let re = regex::Regex::new(r"\{\{([^}]*)\}\}").unwrap();
-        for cap in re.captures_iter(&raw_no_comment) {
-            self.prevs.insert(cap[1].trim().to_string());
-        }
+        // strip block comments
+        let re = Regex::new(r"/\*[\s\S]*?\*/").unwrap();
+        raw_no_comment = re.replace_all(&raw_no_comment, "").to_string();
 
-        let rendered = re.replace_all(&raw_no_comment, "$1");
+        let deps: Arc<RwLock<HashSet<String>>> = Default::default();
+        let deps_clone = deps.clone();
+        let mut env = minijinja::Environment::new();
+        let the_fn = move |name: String| {
+            let foo = &deps_clone;
+            foo.write().unwrap().insert(name.clone());
+            Ok(name)
+        };
+        env.add_template(&self.id, &raw_no_comment).unwrap();
+        env.add_function("ref", the_fn);
+        let rendered = env
+            .get_template(&self.id)
+            .unwrap()
+            .render(minijinja::context! {})
+            .unwrap();
+        self.prevs = deps.read().unwrap().clone();
 
         self.rendered_src = rendered.to_string();
     }
