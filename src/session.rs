@@ -66,6 +66,7 @@ impl Session {
             }
         }
 
+        // Populate nodemap, a mapping from filename to Node struct
         let mut node_map = HashMap::new();
         let mut n_source = 0;
         for p in model_paths.into_iter() {
@@ -98,9 +99,18 @@ impl Session {
                 }
             }
 
-            node.render_and_populate_refs(&macros);
+            // node.render_and_populate_refs(&macros);
 
             node_map.insert(node_id, node);
+        }
+
+        // Render SQL and populate incoming edges
+        let found_model_names = node_map
+            .keys()
+            .map(|v| v.to_string())
+            .collect::<Vec<String>>();
+        for (_, node) in node_map.iter_mut() {
+            node.render_and_populate_refs(&macros, &found_model_names);
         }
 
         println!(

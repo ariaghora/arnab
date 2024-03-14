@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{Arc, RwLock},
-};
+use std::collections::{HashMap, HashSet};
 
 use duckdb::Connection;
 use regex::Regex;
@@ -55,7 +52,11 @@ impl Node {
         Ok(res)
     }
 
-    pub(crate) fn render_and_populate_refs(&mut self, macros: &HashMap<String, String>) {
+    pub(crate) fn render_and_populate_refs(
+        &mut self,
+        macros: &HashMap<String, String>,
+        all_model_names: &[String],
+    ) {
         // strip one-line comments
         let mut raw_no_comment = self
             .raw_src
@@ -68,34 +69,33 @@ impl Node {
         let re = Regex::new(r"/\*[\s\S]*?\*/").unwrap();
         raw_no_comment = re.replace_all(&raw_no_comment, "").to_string();
 
-        let deps: Arc<RwLock<HashSet<String>>> = Default::default();
-        let deps_clone = deps.clone();
-
         let mut env = minijinja::Environment::new();
 
+        // Append macros to the raw source
         let mut macro_src_concat = macros
             .values()
             .map(|v| v.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-
         macro_src_concat.push('\n');
         macro_src_concat.push_str(&raw_no_comment);
 
-        let the_fn = move |name: String| {
-            let deps = &deps_clone;
-            deps.write().unwrap().insert(name.clone());
-            Ok(name)
-        };
-        env.add_template(&self.id, &macro_src_concat).unwrap();
-        env.add_function("ref", the_fn);
+        // get all dependency candidates from a SQL statement. Then
+        // filter out those who don't belong to the found models, because
+        // they could be a reference to CTE, alias, etc. So we will just ignore
+        // them from graph creation.
+        let prevs = get_sql_references(&macro_src_concat)
+            .into_iter()
+            .filter(|v| all_model_names.contains(v))
+            .collect::<HashSet<String>>();
+        self.prevs = prevs;
 
+        env.add_template(&self.id, &macro_src_concat).unwrap();
         let rendered = env
             .get_template(&self.id)
             .unwrap()
             .render(minijinja::context! {})
             .unwrap();
-        self.prevs = deps.read().unwrap().clone();
         self.rendered_src = rendered.to_string();
     }
 }
@@ -195,5 +195,76 @@ impl Node {
             };
         }
         Ok(NodeExecutionResult::Sql { n_rows })
+    }
+}
+
+use sqlparser::{
+    ast::{Query, Statement},
+    dialect::DuckDbDialect,
+};
+use sqlparser::{
+    ast::{SetExpr, TableFactor, TableWithJoins},
+    parser::Parser,
+};
+
+/// Get references from a SINGLE sql statement
+pub fn get_sql_references(stmt: &str) -> HashSet<String> {
+    let dialect = DuckDbDialect {};
+    let ast = Parser::parse_sql(&dialect, stmt).unwrap();
+
+    let mut tables = HashSet::new();
+    for statement in ast {
+        if let Statement::Query(query) = statement {
+            if let SetExpr::Select(select) = &*query.body {
+                for tables_with_joins in &select.from {
+                    extract_dependency_names(tables_with_joins, &mut tables);
+                }
+            }
+        }
+    }
+
+    tables
+}
+
+fn extract_dependency_names(table_with_joins: &TableWithJoins, tables: &mut HashSet<String>) {
+    match &table_with_joins.relation {
+        TableFactor::Table { name, .. } => {
+            tables.insert(name.to_string());
+        }
+        TableFactor::Derived { subquery, .. } => {
+            extract_from_subquery(subquery, tables);
+        }
+        _ => {}
+    }
+}
+
+fn extract_from_subquery(query: &Query, tables: &mut HashSet<String>) {
+    if let SetExpr::Select(select) = &*query.body {
+        for table_with_joins in &select.from {
+            extract_dependency_names(table_with_joins, tables);
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashSet;
+
+    use super::get_sql_references;
+
+    #[test]
+    fn get_ref() {
+        let refs = get_sql_references("SELECT * FROM abc");
+        assert_eq!(refs, HashSet::from(["abc".to_string()]))
+    }
+
+    #[test]
+    fn get_ref_subtable() {
+        let sql = "SELECT * FROM (SELECT * FROM my_sub_table) AS sub_query, my_table WHERE id = 1";
+        let refs = get_sql_references(sql);
+        assert_eq!(
+            refs,
+            HashSet::from(["my_sub_table".to_string(), "my_table".to_string()])
+        );
     }
 }
