@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use duckdb::Connection;
 use regex::Regex;
 use sqlparser::{
-    ast::{Query, Statement},
+    ast::{Cte, Query, Statement},
     dialect::DuckDbDialect,
 };
 use sqlparser::{
@@ -212,6 +212,11 @@ pub fn get_sql_references(stmt: &str) -> HashSet<String> {
     let mut tables = HashSet::new();
     for statement in ast {
         if let Statement::Query(query) = statement {
+            if let Some(with) = &query.with {
+                for cte in &with.cte_tables {
+                    extract_from_cte(&cte, &mut tables);
+                }
+            }
             if let SetExpr::Select(select) = &*query.body {
                 for tables_with_joins in &select.from {
                     extract_dependency_names(tables_with_joins, &mut tables);
@@ -232,6 +237,26 @@ fn extract_dependency_names(table_with_joins: &TableWithJoins, tables: &mut Hash
             extract_from_subquery(subquery, tables);
         }
         _ => {}
+    }
+
+    for join in &table_with_joins.joins {
+        match &join.relation {
+            TableFactor::Table { name, .. } => {
+                tables.insert(name.to_string());
+            }
+            TableFactor::Derived { subquery, .. } => {
+                extract_from_subquery(subquery, tables);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn extract_from_cte(cte: &Cte, tables: &mut HashSet<String>) {
+    if let SetExpr::Select(select) = &*cte.query.body {
+        for table_with_joins in &select.from {
+            extract_dependency_names(table_with_joins, tables);
+        }
     }
 }
 

@@ -26,7 +26,7 @@ pub fn render_dot(node_names: &Vec<String>, node_map: &HashMap<String, Node>) ->
         gv_edges.push_str(&edges_str);
     }
 
-    let dot_src = format!("digraph {{\n {} \n {} \n}}", gv_nodes, gv_edges);
+    let dot_src = format!("digraph LR {{\n {} \n {} \n}}", gv_nodes, gv_edges);
     let mut parser = gv::DotParser::new(&dot_src);
     let graph = parser.process().unwrap();
 
