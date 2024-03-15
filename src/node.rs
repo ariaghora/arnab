@@ -51,6 +51,7 @@ impl Node {
         }
     }
 
+    /// Execute node
     pub fn execute(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
         let res = match &self.node_type {
             NodeType::Sql => self.execute_sql(conn)?,
@@ -107,6 +108,7 @@ impl Node {
 }
 
 impl Node {
+    /// A simple way to detect whether or not a statement will return records
     fn will_produce_records(&self, statement: &str) -> bool {
         let starting_words = vec!["SELECT", "WITH"];
         for sw in starting_words {
@@ -214,7 +216,7 @@ pub fn get_sql_references(stmt: &str) -> HashSet<String> {
         if let Statement::Query(query) = statement {
             if let Some(with) = &query.with {
                 for cte in &with.cte_tables {
-                    extract_from_cte(&cte, &mut tables);
+                    extract_from_cte(cte, &mut tables);
                 }
             }
             if let SetExpr::Select(select) = &*query.body {
