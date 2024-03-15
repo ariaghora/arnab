@@ -20,4 +20,4 @@ Just like [DBT](https://docs.getdbt.com/), but with subset of its features and m
     - [x] Table
     - [x] View
     - [ ] Incremental
-- [ ] Macro
+- [x] Macro
