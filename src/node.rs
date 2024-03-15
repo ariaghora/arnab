@@ -2,6 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use duckdb::Connection;
 use regex::Regex;
+use sqlparser::{
+    ast::{Query, Statement},
+    dialect::DuckDbDialect,
+};
+use sqlparser::{
+    ast::{SetExpr, TableFactor, TableWithJoins},
+    parser::Parser,
+};
 
 use crate::errors::ArnabError;
 
@@ -46,8 +54,6 @@ impl Node {
     pub fn execute(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
         let res = match &self.node_type {
             NodeType::Sql => self.execute_sql(conn)?,
-            // NodeType::Shell => todo!(),
-            // NodeType::Unknown => todo!(),
         };
         Ok(res)
     }
@@ -197,15 +203,6 @@ impl Node {
         Ok(NodeExecutionResult::Sql { n_rows })
     }
 }
-
-use sqlparser::{
-    ast::{Query, Statement},
-    dialect::DuckDbDialect,
-};
-use sqlparser::{
-    ast::{SetExpr, TableFactor, TableWithJoins},
-    parser::Parser,
-};
 
 /// Get references from a SINGLE sql statement
 pub fn get_sql_references(stmt: &str) -> HashSet<String> {

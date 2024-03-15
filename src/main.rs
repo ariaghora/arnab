@@ -1,4 +1,5 @@
 pub mod errors;
+mod graphviz;
 pub mod node;
 mod session;
 
@@ -22,6 +23,8 @@ enum Commands {
     RunFile(RunScriptArgs),
     /// Run pipelines
     Run(RunArgs),
+    /// Visualize pipelines
+    Viz(VizArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -35,6 +38,12 @@ struct RunScriptArgs {
 #[command(author, version, about, long_about = None)]
 struct RunArgs {
     models: Option<String>,
+}
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct VizArgs {
+    svg_output_path: String,
 }
 
 impl std::fmt::Display for ArnabError {
@@ -141,6 +150,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::Run(args) => {
             run_session_with_args(args, conn, config);
+        }
+        Commands::Viz(args) => {
+            todo!()
         }
     }
 

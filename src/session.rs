@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use crate::{
     errors::ArnabError,
+    graphviz::render_dot,
     node::{Node, NodeExecutionResult, NodeType},
 };
 
@@ -99,8 +100,6 @@ impl Session {
                 }
             }
 
-            // node.render_and_populate_refs(&macros);
-
             node_map.insert(node_id, node);
         }
 
@@ -164,6 +163,17 @@ impl Session {
             .map(|v| v.to_string())
             .collect::<Vec<String>>();
 
+        let svg = render_dot(&sorted_valid_ids, &node_map);
+
+        // TODO: running purpose can also be for visualization
+        self.run_nodes(&sorted_valid_ids, &node_map)
+    }
+
+    fn run_nodes(
+        &self,
+        sorted_valid_ids: &Vec<String>,
+        node_map: &HashMap<String, Node>,
+    ) -> Result<(), ArnabError> {
         let now = chrono::Local::now();
         println!("Start pipeline execution on {}", now.format("%Y-%m-%d"));
 
@@ -172,7 +182,7 @@ impl Session {
         let mut execution_errors = Vec::new();
         let mut nth_processed = 1;
         let pipeline_start_time = std::time::Instant::now();
-        for s_id in &sorted_valid_ids {
+        for s_id in sorted_valid_ids {
             let node = &node_map[s_id];
 
             let start_time = std::time::Instant::now();
@@ -200,7 +210,10 @@ impl Session {
             print!("{}", process_info);
             std::io::stdout().flush().unwrap();
 
-            match node.execute(&self.db_conn) {
+            // Execute the node
+            let execution_result = node.execute(&self.db_conn);
+
+            match execution_result {
                 Ok(execution_result) => {
                     n_execution_success += 1;
                     status = "CREATE VIEW".green().to_string();
@@ -244,7 +257,6 @@ impl Session {
             n_execution_success,
             execution_errors.len()
         );
-
         Ok(())
     }
 }
