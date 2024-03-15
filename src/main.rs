@@ -58,12 +58,27 @@ impl std::fmt::Display for ArnabError {
     }
 }
 
-fn visualize_with_args(_args: VizArgs, conn: Connection, config: Config) {
+fn save_visualization_with_args(
+    args: VizArgs,
+    conn: Connection,
+    config: Config,
+) -> Result<(), ArnabError> {
     let mut session = Session::new(config, conn);
-    match session.save_visualization() {
-        Ok(_) => todo!(),
-        Err(_) => todo!(),
+
+    let adjusted_path = if args.svg_output_path.ends_with(".svg") {
+        args.svg_output_path.clone()
+    } else {
+        let mut s = args.svg_output_path.to_string();
+        s.push_str(".svg");
+        s
+    };
+
+    match session.save_visualization(&adjusted_path) {
+        Ok(_) => println!("Saved as {}", adjusted_path),
+        Err(e) => return Err(ArnabError::Error(format!("Failed to save SVG: {:?}", e))),
     }
+
+    Ok(())
 }
 
 fn run_session_with_args(_args: RunArgs, conn: Connection, config: Config) {
@@ -160,7 +175,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             run_session_with_args(args, conn, config);
         }
         Commands::Viz(args) => {
-            todo!()
+            save_visualization_with_args(args, conn, config).unwrap();
         }
     }
 

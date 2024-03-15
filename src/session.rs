@@ -43,7 +43,7 @@ impl Session {
 
     pub fn build_graph(&mut self) -> Result<(Vec<String>, HashMap<String, Node>), ArnabError> {
         let glob_pattern =
-            std::path::Path::new(&self.config.model_path.as_ref().unwrap()).join("*.*");
+            std::path::Path::new(&self.config.model_path.as_ref().unwrap()).join("**/*.sql");
         let model_paths = glob::glob(glob_pattern.to_str().unwrap())
             .unwrap()
             .map(|v| v.unwrap())
@@ -163,18 +163,15 @@ impl Session {
             .map(|v| v.to_string())
             .collect::<Vec<String>>();
 
-
         // TODO: running purpose can also be for visualization
         // self.run_nodes(&sorted_valid_ids, &node_map)
         Ok((sorted_valid_ids, node_map))
     }
 
-    pub fn save_visualization(
-        &mut self
-    )->Result<(), ArnabError>{
+    pub fn save_visualization(&mut self, path: &str) -> Result<(), ArnabError> {
         let (sorted_valid_ids, node_map) = self.build_graph()?;
-        let _svg = render_dot(&sorted_valid_ids, &node_map);
-        Ok(())
+        let svg = render_dot(&sorted_valid_ids, &node_map);
+        std::fs::write(path, svg).map_err(|e| ArnabError::Error(e.to_string()))
     }
 
     pub fn run_nodes(
