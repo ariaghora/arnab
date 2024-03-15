@@ -23,7 +23,7 @@ pub struct Config {
     pub(crate) db_path: Option<String>,
     pub(crate) macro_path: Option<String>,
     pub(crate) duckdb_settings: Option<HashMap<String, String>>,
-    pub(crate) model_path: Option<String>,
+    pub(crate) models_dir: Option<String>,
     pub(crate) models: Option<HashMap<String, ModelInfo>>,
 }
 
@@ -43,7 +43,7 @@ impl Session {
 
     pub fn build_graph(&mut self) -> Result<(Vec<String>, HashMap<String, Node>), ArnabError> {
         let glob_pattern =
-            std::path::Path::new(&self.config.model_path.as_ref().unwrap()).join("**/*.sql");
+            std::path::Path::new(&self.config.models_dir.as_ref().unwrap()).join("**/*.sql");
         let model_paths = glob::glob(glob_pattern.to_str().unwrap())
             .unwrap()
             .map(|v| v.unwrap())

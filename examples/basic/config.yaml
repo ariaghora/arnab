@@ -1,0 +1,5 @@
+models_dir: .
+db_path: data.duckdb
+models:
+  source_orders:
+    materialize: table  # by default models are materialized as view if not specified
