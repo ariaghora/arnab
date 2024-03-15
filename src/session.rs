@@ -41,7 +41,7 @@ impl Session {
         }
     }
 
-    pub fn run(&mut self) -> Result<(), ArnabError> {
+    pub fn build_graph(&mut self) -> Result<(Vec<String>, HashMap<String, Node>), ArnabError> {
         let glob_pattern =
             std::path::Path::new(&self.config.model_path.as_ref().unwrap()).join("*.*");
         let model_paths = glob::glob(glob_pattern.to_str().unwrap())
@@ -96,7 +96,7 @@ impl Session {
             // set model's materialization mode
             if let Some(models) = &self.config.models {
                 if let Some(model_info) = models.get(&node_id) {
-                    node.materialize = model_info.materialize.clone();
+                    node.materialize.clone_from(&model_info.materialize);
                 }
             }
 
@@ -163,17 +163,26 @@ impl Session {
             .map(|v| v.to_string())
             .collect::<Vec<String>>();
 
-        let svg = render_dot(&sorted_valid_ids, &node_map);
 
         // TODO: running purpose can also be for visualization
-        self.run_nodes(&sorted_valid_ids, &node_map)
+        // self.run_nodes(&sorted_valid_ids, &node_map)
+        Ok((sorted_valid_ids, node_map))
     }
 
-    fn run_nodes(
-        &self,
-        sorted_valid_ids: &Vec<String>,
-        node_map: &HashMap<String, Node>,
+    pub fn save_visualization(
+        &mut self
+    )->Result<(), ArnabError>{
+        let (sorted_valid_ids, node_map) = self.build_graph()?;
+        let _svg = render_dot(&sorted_valid_ids, &node_map);
+        Ok(())
+    }
+
+    pub fn run_nodes(
+        &mut self,
+        // sorted_valid_ids: &Vec<String>,
+        // node_map: &HashMap<String, Node>,
     ) -> Result<(), ArnabError> {
+        let (sorted_valid_ids, node_map) = self.build_graph()?;
         let now = chrono::Local::now();
         println!("Start pipeline execution on {}", now.format("%Y-%m-%d"));
 
@@ -182,7 +191,7 @@ impl Session {
         let mut execution_errors = Vec::new();
         let mut nth_processed = 1;
         let pipeline_start_time = std::time::Instant::now();
-        for s_id in sorted_valid_ids {
+        for s_id in &sorted_valid_ids {
             let node = &node_map[s_id];
 
             let start_time = std::time::Instant::now();

@@ -58,9 +58,17 @@ impl std::fmt::Display for ArnabError {
     }
 }
 
+fn visualize_with_args(_args: VizArgs, conn: Connection, config: Config) {
+    let mut session = Session::new(config, conn);
+    match session.save_visualization() {
+        Ok(_) => todo!(),
+        Err(_) => todo!(),
+    }
+}
+
 fn run_session_with_args(_args: RunArgs, conn: Connection, config: Config) {
     let mut session = Session::new(config, conn);
-    match session.run() {
+    match session.run_nodes() {
         Ok(_) => {
             // TODO: do something on session completed
         }
