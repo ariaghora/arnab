@@ -1,0 +1,8 @@
+# models_dir and db_path are the bare minimum to set
+models_dir: .
+db_path: data.duckdb
+
+# optionally, we can set per-model configuration in `models` section
+models:
+  source_orders:
+    materialize: table  # by default models are materialized as view if not specified
