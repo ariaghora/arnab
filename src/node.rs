@@ -54,7 +54,7 @@ impl Node {
     /// Execute node
     pub fn execute(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
         let res = match &self.node_type {
-            NodeType::Sql => self.execute_sql(conn)?,
+            NodeType::Sql => self.execute_sql_statements(conn)?,
         };
         Ok(res)
     }
@@ -122,7 +122,7 @@ impl Node {
         false
     }
 
-    fn execute_sql(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
+    fn execute_sql_statements(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
         let statements: Vec<String> = self
             .rendered_src
             .split(';')
@@ -131,18 +131,19 @@ impl Node {
             .collect();
 
         // Statement batch validation will check if a model has exactle one
-        // SELECT statement.
+        // SELECT statement. First of all, we collect a list of stamtements 
+        // that returns records.
         let statements_returning_records = statements
             .iter()
             .filter(|s| self.will_produce_records(s))
             .collect::<Vec<_>>();
-
         if statements_returning_records.len() != 1 {
             return Err(
                 ArnabError::Error(format!("Models must have exactly one `SELECT` statement (or equivalent statements returning recods), but {} has {}", self.id, statements_returning_records.len())),
             );
         }
 
+        // Arnab will execute all statements in a SQL file one by one.
         // We are not going to bulk-execute statements, so the source code is split
         // by semicolon. A single statement containing SELECT, WITH, etc., will
         // be treated differently to create VIEW or TABLE.
