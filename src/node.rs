@@ -14,7 +14,7 @@ use sqlparser::{
 use crate::errors::ArnabError;
 
 #[derive(Clone)]
-pub enum NodeType {
+pub enum NodeKind {
     Sql,
     // Python, --> need to figure out how to pass data to-from python
     // Shell,
@@ -33,12 +33,12 @@ pub struct Node {
     pub(crate) rendered_src: String,
     pub(crate) nexts: HashSet<String>,
     pub(crate) prevs: HashSet<String>,
-    pub(crate) node_type: NodeType,
+    pub(crate) node_kind: NodeKind,
     pub(crate) materialize: Option<String>,
 }
 
 impl Node {
-    pub fn new(node_type: NodeType, path: &str, id: &str, raw_src: &str) -> Self {
+    pub fn new(node_type: NodeKind, path: &str, id: &str, raw_src: &str) -> Self {
         Self {
             path: path.into(),
             id: id.into(),
@@ -47,14 +47,14 @@ impl Node {
             nexts: Default::default(),
             prevs: Default::default(),
             materialize: None,
-            node_type,
+            node_kind: node_type,
         }
     }
 
-    /// Execute node
+    /// Execute node accroding to its kind
     pub fn execute(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
-        let res = match &self.node_type {
-            NodeType::Sql => self.execute_sql_statements(conn)?,
+        let res = match &self.node_kind {
+            NodeKind::Sql => self.execute_sql_statements(conn)?,
         };
         Ok(res)
     }
