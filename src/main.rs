@@ -40,12 +40,7 @@ struct RunScriptArgs {
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct RunArgs {
-    // #[arg(short, long)]
-    // models_dir: Option<String>,
-    // #[arg(short, long)]
-    // db_path: Option<String>,
-}
+struct RunArgs {}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -128,7 +123,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     config.db_path = cli.db_path.or(config.db_path);
     config.models_dir = cli.models_dir.or(config.models_dir);
 
-
     let conn = match &config.db_path {
         Some(db_path) => Connection::open(db_path)?,
         None => {
@@ -159,7 +153,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         println!("Overridden duckdb settings:\n{:?}", duckdb_settings);
     }
-
 
     match cli.command {
         Commands::RunFile(arg) => {
