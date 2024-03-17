@@ -13,12 +13,12 @@ use crate::{
     node::{Node, NodeExecutionResult, NodeKind},
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ModelInfo {
     pub(crate) materialize: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub(crate) db_path: Option<String>,
     pub(crate) macro_path: Option<String>,

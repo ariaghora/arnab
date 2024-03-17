@@ -15,6 +15,10 @@ use std::{error::Error, io::Write};
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+    #[arg(short, long)]
+    models_dir: Option<String>,
+    #[arg(short, long)]
+    db_path: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -37,7 +41,10 @@ struct RunScriptArgs {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct RunArgs {
-    models: Option<String>,
+    // #[arg(short, long)]
+    // models_dir: Option<String>,
+    // #[arg(short, long)]
+    // db_path: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -108,18 +115,24 @@ fn run_session_with_args(_args: RunArgs, conn: Connection, config: Config) {
 fn main() -> Result<(), Box<dyn Error>> {
     let config_name = "config.yaml";
     let config_exists = std::path::Path::new(config_name).exists();
-    let config: Config = if !config_exists {
-        println!("Config file (config.yaml) not found on project root");
+    let mut config: Config = if !config_exists {
+        println!("Config file (config.yaml) not found on project root, using defaults");
         Default::default()
     } else {
         let config_str = std::fs::read_to_string(config_name)?;
         serde_yaml::from_str(&config_str)?
     };
 
+    // Parse CLI and override config with root cli args
+    let cli = Cli::parse();
+    config.db_path = cli.db_path.or(config.db_path);
+    config.models_dir = cli.models_dir.or(config.models_dir);
+
+
     let conn = match &config.db_path {
         Some(db_path) => Connection::open(db_path)?,
         None => {
-            println!("Using in-memory DuckDB connection");
+            println!("db_path unspecified, using in-memory DuckDB connection");
             Connection::open_in_memory()?
         }
     };
@@ -147,7 +160,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Overridden duckdb settings:\n{:?}", duckdb_settings);
     }
 
-    let cli = Cli::parse();
+
     match cli.command {
         Commands::RunFile(arg) => {
             for path in &arg.script_paths {
