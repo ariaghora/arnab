@@ -14,7 +14,7 @@ use sqlparser::{
 use crate::errors::ArnabError;
 
 #[derive(Clone)]
-pub enum NodeType {
+pub enum NodeKind {
     Sql,
     // Python, --> need to figure out how to pass data to-from python
     // Shell,
@@ -33,12 +33,12 @@ pub struct Node {
     pub(crate) rendered_src: String,
     pub(crate) nexts: HashSet<String>,
     pub(crate) prevs: HashSet<String>,
-    pub(crate) node_type: NodeType,
+    pub(crate) node_kind: NodeKind,
     pub(crate) materialize: Option<String>,
 }
 
 impl Node {
-    pub fn new(node_type: NodeType, path: &str, id: &str, raw_src: &str) -> Self {
+    pub fn new(node_type: NodeKind, path: &str, id: &str, raw_src: &str) -> Self {
         Self {
             path: path.into(),
             id: id.into(),
@@ -47,13 +47,14 @@ impl Node {
             nexts: Default::default(),
             prevs: Default::default(),
             materialize: None,
-            node_type,
+            node_kind: node_type,
         }
     }
 
+    /// Execute node accroding to its kind
     pub fn execute(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
-        let res = match &self.node_type {
-            NodeType::Sql => self.execute_sql(conn)?,
+        let res = match &self.node_kind {
+            NodeKind::Sql => self.execute_sql_statements(conn)?,
         };
         Ok(res)
     }
@@ -107,6 +108,7 @@ impl Node {
 }
 
 impl Node {
+    /// A simple way to detect whether or not a statement will return records
     fn will_produce_records(&self, statement: &str) -> bool {
         let starting_words = vec!["SELECT", "WITH"];
         for sw in starting_words {
@@ -120,7 +122,7 @@ impl Node {
         false
     }
 
-    fn execute_sql(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
+    fn execute_sql_statements(&self, conn: &Connection) -> Result<NodeExecutionResult, ArnabError> {
         let statements: Vec<String> = self
             .rendered_src
             .split(';')
@@ -129,18 +131,19 @@ impl Node {
             .collect();
 
         // Statement batch validation will check if a model has exactle one
-        // SELECT statement.
+        // SELECT statement. First of all, we collect a list of stamtements 
+        // that returns records.
         let statements_returning_records = statements
             .iter()
             .filter(|s| self.will_produce_records(s))
             .collect::<Vec<_>>();
-
         if statements_returning_records.len() != 1 {
             return Err(
                 ArnabError::Error(format!("Models must have exactly one `SELECT` statement (or equivalent statements returning recods), but {} has {}", self.id, statements_returning_records.len())),
             );
         }
 
+        // Arnab will execute all statements in a SQL file one by one.
         // We are not going to bulk-execute statements, so the source code is split
         // by semicolon. A single statement containing SELECT, WITH, etc., will
         // be treated differently to create VIEW or TABLE.
@@ -214,7 +217,7 @@ pub fn get_sql_references(stmt: &str) -> HashSet<String> {
         if let Statement::Query(query) = statement {
             if let Some(with) = &query.with {
                 for cte in &with.cte_tables {
-                    extract_from_cte(&cte, &mut tables);
+                    extract_from_cte(cte, &mut tables);
                 }
             }
             if let SetExpr::Select(select) = &*query.body {

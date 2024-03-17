@@ -6,6 +6,8 @@ use layout::{
     gv::{self, GraphBuilder},
 };
 
+/// Given a list of node name and a map from node name to node object, render 
+/// rendered graph in SVG format.
 pub fn render_dot(node_names: &Vec<String>, node_map: &HashMap<String, Node>) -> String {
     let gv_nodes = node_names
         .iter()
@@ -32,10 +34,8 @@ pub fn render_dot(node_names: &Vec<String>, node_map: &HashMap<String, Node>) ->
 
     let mut gb = GraphBuilder::new();
     gb.visit_graph(&graph);
-    let mut vg = gb.get();
-
-    let mut svg = SVGWriter::new();
-    vg.do_it(false, false, false, &mut svg);
-
-    svg.finalize()
+    let mut visual_graph = gb.get();
+    let mut svg_writer = SVGWriter::new();
+    visual_graph.do_it(false, false, false, &mut svg_writer);
+    svg_writer.finalize()
 }

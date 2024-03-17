@@ -45,5 +45,5 @@ Set the working directory to the root of your project, then run `arnab viz outou
 - [x] Model materialization types:
     - [x] Table
     - [x] View
-    - [ ] Incremental
+    - [ ] ~~Incremental~~ (probably not necessary for now)
 - [x] Macro

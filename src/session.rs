@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::{
     errors::ArnabError,
     graphviz::render_dot,
-    node::{Node, NodeExecutionResult, NodeType},
+    node::{Node, NodeExecutionResult, NodeKind},
 };
 
 #[derive(Debug, Deserialize)]
@@ -86,7 +86,7 @@ impl Session {
             let node_type = {
                 let extension = p.extension().unwrap().to_str().unwrap();
                 match extension {
-                    "sql" => NodeType::Sql,
+                    "sql" => NodeKind::Sql,
                     _ => return Err(ArnabError::UnknownModelType(extension.into())),
                 }
             };
