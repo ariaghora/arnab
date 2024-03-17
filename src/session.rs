@@ -27,6 +27,18 @@ pub struct Config {
     pub(crate) models: Option<HashMap<String, ModelInfo>>,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            models_dir: Some(".".to_string()),
+            db_path: None,
+            macro_path: None,
+            duckdb_settings: None,
+            models: None,
+        }
+    }
+}
+
 /// Representation of a single process of pipeline execution
 pub struct Session {
     pub(crate) config: Config,

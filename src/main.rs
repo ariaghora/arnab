@@ -108,19 +108,19 @@ fn run_session_with_args(_args: RunArgs, conn: Connection, config: Config) {
 fn main() -> Result<(), Box<dyn Error>> {
     let config_name = "config.yaml";
     let config_exists = std::path::Path::new(config_name).exists();
-    if !config_exists {
+    let config: Config = if !config_exists {
         println!("Config file (config.yaml) not found on project root");
-        std::process::exit(1);
-    }
-
-    let config_str = std::fs::read_to_string(config_name)?;
-    let config: Config = serde_yaml::from_str(&config_str)?;
+        Default::default()
+    } else {
+        let config_str = std::fs::read_to_string(config_name)?;
+        serde_yaml::from_str(&config_str)?
+    };
 
     let conn = match &config.db_path {
         Some(db_path) => Connection::open(db_path)?,
         None => {
-            println!("db_path must be configured in the configuration");
-            std::process::exit(1);
+            println!("Using in-memory DuckDB connection");
+            Connection::open_in_memory()?
         }
     };
 
@@ -150,7 +150,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     match cli.command {
         Commands::RunFile(arg) => {
-            //let g = glob(&arg.script_paths).unwrap();
             for path in &arg.script_paths {
                 match std::fs::read_to_string(path) {
                     Ok(content) => {
