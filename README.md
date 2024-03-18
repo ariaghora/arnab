@@ -13,6 +13,15 @@ Just like [DBT](https://docs.getdbt.com/), but is with subset of its features, j
 
 Its main purpose is simple: give it a directory containing SQL files, it will scan the directory recursively and determine the order of execution of all queries.
 
+<p align="center">
+  <i>Simple transformation demo</i>
+</p>
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=CwmvRuyRLy8">
+  <img src="https://img.youtube.com/vi/CwmvRuyRLy8/0.jpg"/>
+  </a>
+</p>
+
 ## Getting Started
 
 Create a project directory where you want to put all of your SQL files.

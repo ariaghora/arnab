@@ -13,18 +13,30 @@ use crate::{
     node::{Node, NodeExecutionResult, NodeKind},
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ModelInfo {
     pub(crate) materialize: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub(crate) db_path: Option<String>,
     pub(crate) macro_path: Option<String>,
     pub(crate) duckdb_settings: Option<HashMap<String, String>>,
     pub(crate) models_dir: Option<String>,
     pub(crate) models: Option<HashMap<String, ModelInfo>>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            models_dir: Some(".".to_string()),
+            db_path: None,
+            macro_path: None,
+            duckdb_settings: None,
+            models: None,
+        }
+    }
 }
 
 /// Representation of a single process of pipeline execution
